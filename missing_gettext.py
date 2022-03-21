@@ -10,12 +10,7 @@
 # TODO: get ride of this.
 # pylint: disable=W9903
 
-try:
-    from logilab import astng
-    from logilab.astng.node_classes import *
-except ImportError:
-    import astroid
-    from astroid.node_classes import *
+import astroid
 
 try:
     from pylint.interfaces import IAstroidChecker
@@ -186,10 +181,12 @@ class MissingGettextChecker(BaseChecker):
 
     __implements__ = IAstroidChecker  # pylint: disable=F0220
 
-    name = 'missing_gettext'
+    name = "missing_gettext"
     msgs = {
         'W9903': ('non-gettext-ed string %r',
-                  "There is a raw string that's not passed through gettext"),
+                  "There is a raw string that's not passed through gettext",
+                  'missing_gettext'
+                  ),
     }
 
     # this is important so that your checker is executed before others
@@ -254,16 +251,16 @@ class MissingGettextChecker(BaseChecker):
         # functions then the string is assumed to be OK
         whitelist = [
             # {'shouldignore': 1}
-            (Dict,
+            (astroid.nodes.Dict,
              lambda curr_node,
              node: node in [x[0] for x in curr_node.items]),
 
             # dict['shouldignore']
-            (Index, lambda curr_node, node: curr_node.value == node),
+            (astroid.nodes.Index, lambda curr_node, node: curr_node.value == node),
 
             # list_display = [....]
             # e.g. Django Admin class Meta:...
-            (Assign,
+            (astroid.nodes.Assign,
              lambda curr_node,
              node: (len(curr_node.targets) == 1
                     and hasattr(curr_node.targets[0], 'name')
@@ -276,10 +273,10 @@ class MissingGettextChecker(BaseChecker):
                         'date_hierarchy'])),
 
             # Just a random doc-string-esque string in the code
-            (Discard, lambda curr_node, node: curr_node.value == node),
+            (astroid.nodes.Expr, lambda curr_node, node: curr_node.value == node),
 
             # X(attrs={'class': 'somecssclass', 'maxlength': '20'})
-            (Keyword,
+            (astroid.nodes.Keyword,
              lambda curr_node,
              node: (curr_node.arg == 'attrs'
                     and hasattr(curr_node.value, 'items')
@@ -288,49 +285,49 @@ class MissingGettextChecker(BaseChecker):
                                  'class', 'maxlength', 'cols', 'rows',
                                  'checked', 'disabled', 'readonly']])),
             # X(attrs=dict(....))
-            (Keyword,
+            (astroid.nodes.Keyword,
              lambda curr_node,
              node: (curr_node.arg == 'attrs'
-                    and isinstance(curr_node.value, CallFunc)
+                    and isinstance(curr_node.value, astroid.nodes.Call)
                     and hasattr(curr_node.value.func, 'name')
                     and curr_node.value.func.name == 'dict')),
             # x = CharField(default='xxx', related_name='tickets') etc.
-            (Keyword,
+            (astroid.nodes.Keyword,
              lambda curr_node,
              node: (curr_node.arg in [
                     'regex', 'prefix', 'css_class', 'mimetype',
                     'related_name', 'default', 'initial', 'upload_to']
                     and curr_node.value == node)),
-            (Keyword,
+            (astroid.nodes.Keyword,
              lambda curr_node,
              node: (curr_node.arg in ['input_formats']
                     and len(curr_node.value.elts) == 1
                     and curr_node.value.elts[0] == node)),
-            (Keyword,
+            (astroid.nodes.Keyword,
              lambda curr_node,
              node: (curr_node.arg in ['fields']
                     and node in curr_node.value.elts)),
             # something() == 'string'
-            (Compare, lambda curr_node, node: node == curr_node.ops[0][1]),
+            (astroid.nodes.Compare, lambda curr_node, node: node == curr_node.ops[0][1]),
             # 'something' == blah()
-            (Compare, lambda curr_node, node: node == curr_node.left),
+            (astroid.nodes.Compare, lambda curr_node, node: node == curr_node.left),
 
             # Try to exclude queryset.extra(something=[..., 'some sql',...]
-            (CallFunc,
+            (astroid.nodes.Call,
              lambda curr_node,
              node: (curr_node.func.attrname in ['extra']
                     and any(is_child_node(node, x) for x in curr_node.args))),
 
             # Queryset functions, queryset.order_by('shouldignore')
-            (CallFunc,
+            (astroid.nodes.Call,
              lambda curr_node,
-             node: (isinstance(curr_node.func, Getattr)
+             node: (isinstance(curr_node.func, astroid.Getattr)
                     and curr_node.func.attrname in [
                     'has_key', 'pop', 'order_by', 'strftime', 'strptime',
                     'get', 'select_related', 'values', 'filter',
                     'values_list'])),
             # logging.info('shouldignore')
-            (CallFunc,
+            (astroid.nodes.Call,
              lambda curr_node,
              node: curr_node.func.expr.name in ['logging']),
 
@@ -339,19 +336,19 @@ class MissingGettextChecker(BaseChecker):
             # HttpResponseRedirect('/some/url/shouldnt/care')
             # first is function name, 2nd is the position the string must be
             # in (none to mean don't care)
-            (CallFunc,
+            (astroid.nodes.Call,
              lambda curr_node,
              node: (curr_node.func.name in ['hasattr', 'getattr']
                     and curr_node.args[1] == node)),
-            (CallFunc,
+            (astroid.nodes.Call,
              lambda curr_node,
              node: (curr_node.func.name in [
                     'HttpResponseRedirect', 'HttpResponse'])),
-            (CallFunc,
+            (astroid.nodes.Call,
              lambda curr_node,
              node: (curr_node.func.name == 'set_cookie'
                     and curr_node.args[0] == node)),
-            (CallFunc,
+            (astroid.nodes.Call,
              lambda curr_node,
              node: (curr_node.func.name in ['ForeignKey', 'OneToOneField']
                     and curr_node.args[0] == node)),
@@ -365,7 +362,6 @@ class MissingGettextChecker(BaseChecker):
         if debug:
             import pdb
             pdb.set_trace()
-
         # we have a string. Go upwards to see if we have a _ function call
         try:
             while curr_node.parent is not None:
@@ -373,15 +369,13 @@ class MissingGettextChecker(BaseChecker):
                     print(repr(curr_node))
                     print(repr(curr_node.as_string()))
                     print(curr_node.repr_tree())
-                if isinstance(curr_node, CallFunc):
-                    if (hasattr(curr_node, 'func')
-                            and hasattr(curr_node.func, 'name')):
-                        if (curr_node.func.name in [
-                                '_', 'ungettext', 'ungettext_lazy']):
-                            # we're in a _() call
-                            string_ok = True
-                            break
-
+                if (hasattr(curr_node, 'func')
+                        and hasattr(curr_node.func, 'name')):
+                    if (curr_node.func.name in [
+                            '_', 'ungettext', 'ungettext_lazy']):
+                        # we're in a _() call
+                        string_ok = True
+                        break
                 # Look at our whitelist
                 for cls, func in whitelist:
                     if isinstance(curr_node, cls):
